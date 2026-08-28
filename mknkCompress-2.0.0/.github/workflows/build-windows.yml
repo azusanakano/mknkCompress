@@ -1,0 +1,32 @@
+name: Build Windows Native
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-package:
+    runs-on: windows-2025
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Static checks
+        run: node tests/static-check.mjs
+
+      - name: Build and package with MSVC
+        shell: pwsh
+        run: ./package-release.ps1 -Version 2.0.0
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mknkCompress-2.0.0-Native-MSVC-release
+          path: release/*
+          if-no-files-found: error
+          retention-days: 7

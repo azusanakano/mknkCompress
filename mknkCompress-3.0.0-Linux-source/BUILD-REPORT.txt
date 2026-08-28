@@ -1,0 +1,62 @@
+mknkCompress 3.0.0 Linux - BUILD / VALIDATION REPORT
+=====================================================
+
+Build date
+----------
+2026-08-28
+
+Target
+------
+- Linux Mint 21.3 / 22.x
+- x86_64 (64-bit)
+- GTK 3 desktop runtime
+- Minimum required glibc symbol version in GUI binary: GLIBC_2.35
+
+Toolchain and image engine
+--------------------------
+- GCC 13.3.0, C++20, optimized release build
+- Statically linked libstdc++ and libgcc
+- Node.js 24.19.0 x64 runtime included
+- Sharp 0.35.3
+- libvips 8.18.3 with mozjpeg
+
+Implemented
+-----------
+- JPG-only output
+- File/folder drag and drop with automatic compression start
+- Candidate quality and 4:4:4 / 4:2:0 subsampling search
+- Luma 68%, chroma 20%, edge 12% perceptual score
+- mozjpeg, progressive JPEG, Trellis and optimized scans
+- Only-save-when-smaller behavior
+- Alpha flattening to white
+- First-frame processing for animated input
+- EXIF orientation handling
+- Optional EXIF/ICC metadata preservation
+- Aspect-ratio-preserving resize
+- Timestamp preservation
+- Antigravity / Gravity themes and Dark / Light appearance
+- Persisted settings
+- Unicode paths
+
+Validation
+----------
+- Source/static requirement checks: PASS (15/15)
+- Backend syntax check: PASS
+- PNG to JPG conversion: PASS
+- Alpha flattening to white: PASS
+- Resize to 320 x 240: PASS
+- Unicode input/output paths: PASS
+- Only-save-when-smaller behavior: PASS
+- Bundled Sharp/libvips runtime self-test: PASS
+- GUI/runtime portable layout self-test: PASS
+- Compilation and link: PASS
+- ELF x86-64 architecture: PASS
+- GTK 3 dynamic dependency review: PASS
+- Maximum GUI glibc symbol requirement: 2.35
+
+Environment limitation
+----------------------
+The GUI binary and local compression backend were built and structurally tested
+in Ubuntu 24.04. Interactive window input and drag-and-drop could not be driven
+in the headless build environment. The compression backend was executed against
+real generated image files. No network API is present in the application.

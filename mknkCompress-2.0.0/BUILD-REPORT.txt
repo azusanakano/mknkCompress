@@ -1,0 +1,61 @@
+mknkCompress 2.0.0 Native - BUILD / VALIDATION REPORT
+======================================================
+
+Build date
+----------
+2026-08-19
+
+Toolchain
+---------
+- llvm-mingw 20260616 UCRT Linux cross toolchain
+- Clang / LLD 22.1.8
+- C++20, optimized release build
+- Windows GUI subsystem
+- Statically linked C++ runtime; Windows 10/11 system UCRT/API-set required
+- Control Flow Guard, ASLR, DEP/NX and High Entropy VA where supported
+- SOURCE_DATE_EPOCH=1787097600 for reproducibility
+
+Architectures built
+-------------------
+- x64:    PE32+, Machine 0x8664
+- x86:    PE32,  Machine 0x014c
+- ARM64:  PE32+, Machine 0xaa64
+
+Implemented
+-----------
+- JPG-only output
+- File/folder drag and drop with automatic compression start
+- Candidate quality/subsampling search
+- Luma/chroma/edge perceptual score
+- Only-save-when-smaller behavior
+- Alpha flattening to white
+- First-frame processing
+- EXIF orientation handling
+- Best-effort WIC metadata and ICC block copy
+- Resize with aspect ratio
+- Timestamp preservation
+- Antigravity / Gravity visual themes
+- Dark / Light appearance and persisted settings
+
+Validation
+----------
+- Source/static requirement checks: PASS (17/17)
+- Algorithm reference checks: PASS (6/6)
+- Compilation and link: PASS (x64/x86/ARM64)
+- PE signatures and CPU machine fields: PASS
+- Windows GUI subsystem: PASS
+- CFG / ASLR / DEP flags: PASS
+- Icon resource: PASS (6 sizes)
+- VERSIONINFO resource: PASS
+- Application manifest: PASS
+- Imported DLL review: PASS (Windows 10/11 system components only)
+- Reproducible rebuild check: PASS after fixed SOURCE_DATE_EPOCH
+- ZIP integrity and extracted-file hash verification: performed during release staging
+
+Environment limitation
+----------------------
+The binaries were cross-compiled and structurally verified in Linux. An actual
+Windows GUI launch, WIC codec operation and startup-time benchmark could not be
+executed in this environment. No claim of Windows runtime smoke-test completion
+is made. The executables are unsigned, so Windows SmartScreen may show an
+unknown-publisher warning.

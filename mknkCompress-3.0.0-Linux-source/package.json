@@ -1,0 +1,12 @@
+{
+  "name": "mknkcompress-linux",
+  "version": "3.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "sharp": "0.35.3"
+  },
+  "scripts": {
+    "test": "node tests/static-check.mjs && node tests/backend-test.mjs"
+  }
+}

@@ -1,0 +1,8 @@
+40622cf481b7c87ede84fa6374664468be354de25f9acfe6645febfcdefcc660  release-prebuilt/arm64/mknkCompress.exe
+44799ab6da666312c33ee852924c489ea39e179a6a42b14bb0b4ed70fadaa9cb  release-prebuilt/packages/mknkCompress-2.0.0-Native-Windows-All-Architectures.zip
+b9d16ba22dda9cd6281e8379c38675743c2b3ebb18c9690f97a236797878b871  release-prebuilt/packages/mknkCompress-2.0.0-Native-Windows-arm64.zip
+caf8d4e6654afff9625308dd0c9fb3198355a2f2eb17ef1e881548d70f7e4755  release-prebuilt/packages/mknkCompress-2.0.0-Native-Windows-x64.zip
+4f9dcdc2b91e20d03da357ef448e89c344661ba373dce23fb6a813c8988030ab  release-prebuilt/packages/mknkCompress-2.0.0-Native-Windows-x86.zip
+8767513b722c3ea61ca97a8e397bbcbb9ef975b0ea3834c932789cfd724a79b3  release-prebuilt/packages/mknkCompress-2.0.0-native-source-github-ready.zip
+cf303efed5e18bd135b2706d1bc5bc8dc9257735cbd3c7ab14a0d227383a456f  release-prebuilt/x64/mknkCompress.exe
+b08708d2f4123b037402c053938593eae6bc28c79223b2c4cb5d341632d4e6d4  release-prebuilt/x86/mknkCompress.exe

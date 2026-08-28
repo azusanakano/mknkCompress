@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=mknkCompress
+Comment=JPG専用・完全ローカル画像圧縮
+Exec=mknkCompress %F
+Icon=mknkCompress
+Terminal=false
+Categories=Graphics;Utility;
+MimeType=image/jpeg;image/png;image/webp;image/gif;image/tiff;image/avif;image/heif;

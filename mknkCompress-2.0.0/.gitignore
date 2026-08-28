@@ -1,0 +1,16 @@
+.vs/
+build/
+dist/
+release/
+out/
+*.user
+*.suo
+*.VC.db
+*.VC.opendb
+*.obj
+*.pdb
+*.ilk
+
+# GitHub登録用パッケージに同梱する検証済み成果物は追跡する
+!release-prebuilt/
+!release-prebuilt/**

@@ -1,0 +1,24 @@
+name: Build Linux portable
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  linux-x64:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm install --omit=dev
+      - run: npm test
+      - run: chmod +x build-linux.sh package-release.sh
+      - run: ./package-release.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mknkCompress-3.0.0-Linux-x64
+          path: release/mknkCompress-3.0.0-Linux-x64.tar.xz
