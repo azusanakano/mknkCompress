@@ -1,0 +1,45 @@
+mknkYahooCompress 3.0.0 - GitHub Ready Package
+================================================
+
+Repository source
+-----------------
+src/                         Win32/C++ source
+resources/                   Icon, manifest, version resources
+tests/                       Static and algorithm reference tests
+.github/workflows/           GitHub Actions Windows build workflow
+CMakeLists.txt               CMake build definition
+build-windows.*              Visual Studio build scripts
+build-cross-linux.sh         LLVM-MinGW cross-build script
+package-release.ps1          Windows release packaging script
+
+Repository documentation
+------------------------
+README.md                    Product and build documentation
+LICENSE                      MIT License
+SECURITY.md                  Security policy
+CHANGES-3.0.0.md             Change log
+RELEASE-NOTES-3.0.0.md       GitHub Release notes
+GITHUB-UPLOAD-GUIDE.md       Registration instructions
+BUILD-REPORT.txt             Build and validation report
+
+Prebuilt executables
+--------------------
+dist/x64/                    64-bit Intel/AMD Windows
+dist/x86/                    32-bit Intel/AMD Windows
+dist/arm64/                  ARM64 Windows
+
+Release attachments
+-------------------
+releases/                    CPU-specific ZIPs, all-CPU ZIP, source ZIP,
+                             and SHA-256 checksum list
+
+Validation summary
+------------------
+PASS  Static checks: 19
+PASS  Algorithm reference checks: 8
+PASS  GitHub Actions YAML parse
+PASS  Release ZIP integrity
+PASS  Release SHA-256 verification
+PASS  PE architecture verification: x64/x86/ARM64
+
+Windows実機での最終起動確認は別途必要です。

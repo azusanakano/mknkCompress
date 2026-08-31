@@ -1,0 +1,5 @@
+ca51dae1b46ad7ca5e15125ff40c9c30f500af70754b5729f1e609ad4bd578ad  mknkYahooCompress-3.0.0-Native-Windows-ARM64.zip
+644dffa912a68ebfed451a0609fc5f2ed6fd8a1773c01721f76e0091dc55d66f  mknkYahooCompress-3.0.0-Native-Windows-All-Architectures.zip
+42ee50a6e6696595858b37c1a0cdc885d13d6a562474bbae5bac65ac8496f4b6  mknkYahooCompress-3.0.0-Native-Windows-x64.zip
+b50e559b728fe31b3fa17164022cd903c895597fb7555d700ee0dd2c7237625d  mknkYahooCompress-3.0.0-Native-Windows-x86.zip
+683c07ac11e8e26db67352229c0e39014ba62c6920bf3fb58bfa04c768715c49  mknkYahooCompress-3.0.0-native-source.zip

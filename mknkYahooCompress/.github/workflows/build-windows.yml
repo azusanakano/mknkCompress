@@ -1,0 +1,55 @@
+name: Build mknkYahooCompress Windows Native
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: ['main']
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Static checks
+        run: node tests/static-check.mjs
+      - name: Algorithm reference checks
+        run: node tests/algorithm-reference.mjs
+
+  build:
+    needs: test
+    runs-on: windows-2025
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            cmake_arch: x64
+          - arch: x86
+            cmake_arch: Win32
+          - arch: ARM64
+            cmake_arch: ARM64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build/${{ matrix.arch }} -A ${{ matrix.cmake_arch }}
+      - name: Build
+        run: cmake --build build/${{ matrix.arch }} --config Release --parallel
+      - name: Stage
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "dist/${{ matrix.arch }}"
+          Copy-Item "build/${{ matrix.arch }}/Release/mknkYahooCompress.exe" "dist/${{ matrix.arch }}/"
+          Copy-Item README.md,LICENSE "dist/${{ matrix.arch }}/"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mknkYahooCompress-3.0.0-Native-Windows-${{ matrix.arch }}
+          path: dist/${{ matrix.arch }}/
+          if-no-files-found: error

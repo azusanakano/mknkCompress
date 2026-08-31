@@ -1,0 +1,36 @@
+#include "resource.h"
+#include <windows.h>
+
+IDI_APP_ICON ICON "app.ico"
+1 24 "app.manifest"
+
+1 VERSIONINFO
+ FILEVERSION 3,0,0,0
+ PRODUCTVERSION 3,0,0,0
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x40004L
+ FILETYPE 0x1L
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "041104B0"
+    BEGIN
+      VALUE "CompanyName", "三毛猫PC堂\0"
+      VALUE "FileDescription", "mknkYahooCompress - ヤフオク専用JPG圧縮\0"
+      VALUE "FileVersion", "3.0.0\0"
+      VALUE "InternalName", "mknkYahooCompress\0"
+      VALUE "OriginalFilename", "mknkYahooCompress.exe\0"
+      VALUE "ProductName", "mknkYahooCompress\0"
+      VALUE "ProductVersion", "3.0.0\0"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x0411, 1200
+  END
+END

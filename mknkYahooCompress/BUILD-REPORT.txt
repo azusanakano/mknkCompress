@@ -1,0 +1,36 @@
+mknkYahooCompress 3.0.0 Native - VALIDATION REPORT
+===================================================
+
+Date: 2026-08-28
+Target: Windows 10/11, x64/x86/ARM64
+Runtime: Win32 + Windows Imaging Component
+
+Implemented
+-----------
+PASS  JPG-only output
+PASS  Yahoo Auctions 5,000,000-byte per-image limit
+PASS  1200px maximum long edge
+PASS  Highest-perceptual-quality candidate selection inside target size
+PASS  Post-save size revalidation
+PASS  Drag-and-drop auto start
+PASS  EXIF Orientation handling
+PASS  White background compositing for transparency
+PASS  Offline-only processing
+PASS  x64/x86/ARM64 build definitions
+
+Validation performed in this package
+------------------------------------
+PASS  JavaScript reference algorithm tests
+PASS  Static source/feature assertions
+PASS  LLVM-MinGW 20250613 cross-build
+PASS  x64 PE32+ GUI executable
+PASS  x86 PE32 GUI executable
+PASS  ARM64 PE32+ GUI executable
+PASS  ASLR / DEP / Control Flow Guard flags
+PASS  Source and release archive integrity / SHA-256 generation
+
+Binary build status
+-------------------
+PASS. Windows executables were compiled with LLVM-MinGW 20250613 (UCRT/Clang).
+Native launch and image-processing smoke tests require Windows 10/11 and were not
+run in this Linux packaging environment.
