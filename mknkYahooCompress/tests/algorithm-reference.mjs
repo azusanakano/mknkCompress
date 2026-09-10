@@ -10,6 +10,14 @@ function definitions() {
   return out;
 }
 
+function isValidSuffix(suffix) {
+  return suffix.length <= 64 && !/[<>:"/\\|?*\x00-\x1f]/u.test(suffix);
+}
+
+function effectiveTargetBytes(inputSize) {
+  return Math.min(5_000_000, inputSize || 5_000_000);
+}
+
 function score(left, right, width, height) {
   let luma = 0, chroma = 0, edge = 0, edgeCount = 0;
   const yAt = (p, i) => .299 * p[i + 2] + .587 * p[i + 1] + .114 * p[i];
@@ -45,4 +53,18 @@ const fitting = candidates.filter(candidate => candidate.size <= 5_000_000)
   .sort((a, b) => b.score - a.score || b.quality - a.quality);
 assert.equal(fitting[0].quality, 98);
 assert.ok(fitting[0].size <= 5_000_000);
-console.log('8 algorithm checks passed');
+assert.equal(effectiveTargetBytes(61_217), 61_217);
+assert.equal(effectiveTargetBytes(6_000_000), 5_000_000);
+const screenshotCandidates = [
+  {size: 202_450, score: 1.0000, quality: 100},
+  {size: 58_000, score: .9970, quality: 88},
+  {size: 43_000, score: .9900, quality: 82},
+].filter(candidate => candidate.size <= effectiveTargetBytes(61_217))
+  .sort((a, b) => b.score - a.score || b.quality - a.quality);
+assert.equal(screenshotCandidates[0].quality, 88);
+assert.ok(screenshotCandidates[0].size <= 61_217);
+assert.equal(isValidSuffix('_yahoo'), true);
+assert.equal(isValidSuffix('_出品用'), true);
+assert.equal(isValidSuffix('_bad/name'), false);
+assert.equal(isValidSuffix('a'.repeat(65)), false);
+console.log('16 algorithm checks passed');

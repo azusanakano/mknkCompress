@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(mknkYahooCompressNative VERSION 3.0.0 LANGUAGES CXX RC)
+project(mknkYahooCompressNative VERSION 3.0.4 LANGUAGES CXX RC)
 
 add_executable(mknkYahooCompress WIN32
   src/main.cpp
@@ -20,3 +20,15 @@ set_target_properties(mknkYahooCompress PROPERTIES
 
 install(TARGETS mknkYahooCompress RUNTIME DESTINATION .)
 install(FILES README.md LICENSE DESTINATION .)
+
+option(MKNK_BUILD_WINDOW_TESTS "Build Win32 window-placement integration tests" OFF)
+if(MKNK_BUILD_WINDOW_TESTS)
+  enable_testing()
+  add_executable(window-placement-tests tests/window-placement.cpp)
+  target_compile_features(window-placement-tests PRIVATE cxx_std_20)
+  target_compile_definitions(window-placement-tests PRIVATE UNICODE _UNICODE NOMINMAX _WIN32_WINNT=0x0A00)
+  target_compile_options(window-placement-tests PRIVATE /W4 /utf-8)
+  target_link_libraries(window-placement-tests PRIVATE user32)
+  set_target_properties(window-placement-tests PROPERTIES MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+  add_test(NAME window-placement COMMAND window-placement-tests)
+endif()

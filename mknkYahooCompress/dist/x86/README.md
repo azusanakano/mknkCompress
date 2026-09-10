@@ -1,0 +1,103 @@
+# mknkYahooCompress 3.0.4 Native
+
+ネコシステム社の、Yahoo!オークション（ヤフオク）出品画像専用Windowsネイティブ圧縮アプリです。
+Electron・Node.js・Chromium・WebViewを使わず、Win32/C++とWindows Imaging Component（WIC）だけで動作します。画像や利用情報を外部へ送信しません。
+
+## ヤフオク専用の固定仕様
+
+- 出力形式：JPG固定
+- 1枚の出力容量：5,000,000 bytes以下、かつ元画像の容量以下
+- 画像寸法：縦横比を維持し、長辺1200px以下
+- 出力名：元ファイル名 + `_yahoo.jpg`
+- 圧縮後の接尾辞を変更し、［保存］ボタンまたは終了時に次回用設定として保存
+- ドラッグ＆ドロップ直後に自動処理
+
+2026年8月28日に確認したYahoo!オークション公式ヘルプでは、商品画像は1枚5MB以内、JPEGまたはGIF、最大10枚です。幅または高さが1200pxを超える画像は掲載時に縮小されます。本アプリはこの公式仕様へ合わせます。
+
+公式ヘルプ：https://support.yahoo-net.jp/PccAuctions/s/article/H000005298
+
+## 画質優先アルゴリズム
+
+1. EXIF Orientationを反映します。
+2. 長辺が1200pxを超える場合だけWIC Fant補間で縮小します。
+3. JPEG品質100から35まで、4:4:4と4:2:0の候補を生成します。
+4. 320pxサンプルで輝度68%、色差20%、輪郭12%の知覚スコアを比較します。
+5. 「5,000,000 bytes」と「元画像容量」の小さい方を上限にし、その範囲で知覚品質が最も高い候補を採用します。
+6. 保存後にも容量上限を再検証し、元画像より大きい出力は残しません。
+
+元画像より大きくせず、ヤフオクで受理される容量内で画質を最大化する設計です。JPG固定では元画像より小さい候補を作れない極端に小さな画像もあるため、その場合は画質を過度に落とさず変換を中止して画面へ通知します。
+
+## 主な機能
+
+- JPG／JPEG／PNG／BMP／TIFF／GIF入力
+- WebP／AVIF／HEIC／HEIF入力（対応WICコーデック導入時）
+- 画像またはフォルダーのドラッグ＆ドロップ
+- 透明部分を白背景へ合成
+- アニメーション画像は先頭フレームを処理
+- 撮影情報・ICC保持の任意切替（既定はプライバシー優先でOFF）
+- 元画像の更新日時を出力へ継承
+- 反重力斥力場／重力圧縮テーマ、ダーク／ライト表示
+- ウィンドウの位置・サイズ・最大化状態を自動保存し、次回起動時に復元
+- x64／x86／ARM64ビルド構成
+
+## 対応OS
+
+Windows 10 / 11。
+
+## 使い方
+
+1. `mknkYahooCompress.exe`を起動します。
+2. 画像またはフォルダーを画面へドロップします。
+3. 自動でヤフオク用JPGが作成されます。
+
+「圧縮後の接尾辞」へ任意の文字列を入力して［保存］を押すと、次回起動時にも引き継がれます。空欄は `_yahoo` に戻ります。Windowsのファイル名に使えない文字は保存前に検出します。
+
+出力先を空欄にすると元画像と同じフォルダーへ保存します。元ファイルは上書きしません。
+
+## ウィンドウの位置・サイズを記憶
+
+画面を移動・サイズ変更すると自動保存します。保存ボタンを押す必要はありません。
+次回は前回の位置とサイズで開き、最大化で終了した場合は最大化で開きます。
+最小化したまま終了した場合は、最小化する前の通常表示または最大化へ戻して起動します。
+モニターを外すなどして保存位置が完全に画面外になった場合は、Windowsが見える位置へ調整します。
+
+通常終了時とWindowsのログオフ・終了通知時にも保存します。
+保存記録がない場合や破損している場合は、従来の初期位置とサイズで起動します。
+v3.0.3からはEXEを入れ替えるだけで更新でき、接尾辞・出力先・テーマは引き継がれます。
+
+位置情報は既存の `settings.ini` の `[window]` セクションへ追加します。
+位置だけ初期化したい場合は、アプリを終了してからこのセクションを削除します。
+
+## ビルド
+
+Visual Studio 2022またはBuild Tools 2022へ「C++によるデスクトップ開発」、Windows 10/11 SDK、CMakeを導入し、`build-windows.cmd`を実行してください。x64／x86／ARM64を順にビルドします。
+
+PowerShellで配布ZIPまで作る場合：
+
+```powershell
+./package-release.ps1
+```
+
+LinuxからLLVM-MinGWでクロスコンパイルする場合：
+
+```bash
+./build-cross-linux.sh /path/to/llvm-mingw
+```
+
+Cランタイムは静的リンクするため、VC++再頒布可能パッケージは不要です。
+
+Windowsで位置復元の結合テストを実行する場合（ユーザー設定に触れず、一時INIで検証）：
+
+```powershell
+cmake -S . -B build/test -A x64 -DMKNK_BUILD_WINDOW_TESTS=ON
+cmake --build build/test --config Release
+ctest --test-dir build/test -C Release --output-on-failure
+```
+
+実装で使用する位置情報の仕様：
+[WINDOWPLACEMENT](https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-windowplacement)・
+[SetWindowPlacement](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowplacement)。
+
+## プライバシー
+
+ネットワークAPIは使用しません。設定は `%LOCALAPPDATA%\\mknkYahooCompress\\settings.ini` に保存します。候補画像はWindowsの一時フォルダーで生成し、処理後に削除します。

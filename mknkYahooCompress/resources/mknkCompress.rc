@@ -5,8 +5,8 @@ IDI_APP_ICON ICON "app.ico"
 1 24 "app.manifest"
 
 1 VERSIONINFO
- FILEVERSION 3,0,0,0
- PRODUCTVERSION 3,0,0,0
+ FILEVERSION 3,0,4,0
+ PRODUCTVERSION 3,0,4,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -20,13 +20,14 @@ BEGIN
   BEGIN
     BLOCK "041104B0"
     BEGIN
-      VALUE "CompanyName", "三毛猫PC堂\0"
-      VALUE "FileDescription", "mknkYahooCompress - ヤフオク専用JPG圧縮\0"
-      VALUE "FileVersion", "3.0.0\0"
+      VALUE "CompanyName", "ネコシステム社\0"
+      VALUE "FileDescription", "ネコシステム社 mknkYahooCompress - ヤフオク専用JPG圧縮\0"
+      VALUE "FileVersion", "3.0.4\0"
       VALUE "InternalName", "mknkYahooCompress\0"
+      VALUE "LegalCopyright", "Copyright (C) 2026 ネコシステム社\0"
       VALUE "OriginalFilename", "mknkYahooCompress.exe\0"
-      VALUE "ProductName", "mknkYahooCompress\0"
-      VALUE "ProductVersion", "3.0.0\0"
+      VALUE "ProductName", "mknkYahooCompress by ネコシステム社\0"
+      VALUE "ProductVersion", "3.0.4\0"
     END
   END
   BLOCK "VarFileInfo"

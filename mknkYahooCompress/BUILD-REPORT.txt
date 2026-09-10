@@ -1,36 +1,56 @@
-mknkYahooCompress 3.0.0 Native - VALIDATION REPORT
+mknkYahooCompress 3.0.4 Native - VALIDATION REPORT
 ===================================================
 
-Date: 2026-08-28
+Date: 2026-09-10
+Provider: ネコシステム社 / Neko System
 Target: Windows 10/11, x64/x86/ARM64
 Runtime: Win32 + Windows Imaging Component
 
-Implemented
------------
-PASS  JPG-only output
-PASS  Yahoo Auctions 5,000,000-byte per-image limit
-PASS  1200px maximum long edge
-PASS  Highest-perceptual-quality candidate selection inside target size
-PASS  Post-save size revalidation
-PASS  Drag-and-drop auto start
-PASS  EXIF Orientation handling
-PASS  White background compositing for transparency
-PASS  Offline-only processing
-PASS  x64/x86/ARM64 build definitions
+Changes
+-------
+- Automatically save and restore normal window position and size.
+- Retain maximized state and the normal restore rectangle.
+- Reopen a minimized window in its last normal/maximized state.
+- Track the last non-minimized WM_SIZE state rather than relying on
+  GetWindowPlacement flags to remember maximize-before-minimize.
+- Save after move/resize, on normal close, and on session-end notifications.
+- Debounce move/size events; protect saved data during initial restoration.
+- Validate the checksummed placement record; use defaults for invalid data.
+- Use GetWindowPlacement/SetWindowPlacement together to preserve workspace
+  coordinates and use Windows' recovery of completely offscreen placement.
+- Store the new window section in the existing settings.ini file.
 
-Validation performed in this package
-------------------------------------
-PASS  JavaScript reference algorithm tests
-PASS  Static source/feature assertions
-PASS  LLVM-MinGW 20250613 cross-build
-PASS  x64 PE32+ GUI executable
-PASS  x86 PE32 GUI executable
-PASS  ARM64 PE32+ GUI executable
+Compatibility and branding review
+---------------------------------
+- Product remains mknkYahooCompress by ネコシステム社.
+- EXE filename, window class, application identity, and settings directory
+  retain their v3.0.3 values. No brand migration is introduced.
+- Suffix, output directory, metadata and appearance settings remain in place.
+- Compression processing is unchanged: JPG-only, <= original size and
+  <= 5,000,000 bytes, maximum long edge 1200px.
+
+Validation performed
+--------------------
+PASS  Existing static source/feature assertions: 33 checks
+PASS  Existing JavaScript reference algorithm tests: 16 checks
+PASS  GitHub Actions workflow YAML parse
+PASS  LLVM-MinGW 20250613 UCRT/Clang 20.1.7 cross-build: x64/x86/ARM64
+PASS  Window-placement Win32 integration-test executable: compiled for x64
+PASS  PE architecture, GUI subsystem, version 3.0.4.0, company metadata
 PASS  ASLR / DEP / Control Flow Guard flags
-PASS  Source and release archive integrity / SHA-256 generation
+PASS  No dynamically imported libc++.dll / libunwind.dll / MSVC runtime DLLs
+PASS  Source/release/GitHub ZIP integrity and SHA-256 verification
 
-Binary build status
--------------------
-PASS. Windows executables were compiled with LLVM-MinGW 20250613 (UCRT/Clang).
-Native launch and image-processing smoke tests require Windows 10/11 and were not
-run in this Linux packaging environment.
+Not performed
+-------------
+- Windows 10/11 native launch and placement/resize interaction.
+- Runtime execution of the 9 window-placement integration scenarios.
+  A Wine attempt could not start because this environment disallows the
+  required socket. This is not recorded as a passing runtime test.
+- MSVC / GitHub Actions build execution in this environment.
+- Physical multi-monitor, mixed-DPI and Windows logoff interaction.
+
+The source includes tests/window-placement.cpp (temporary INI, no user
+settings mutation). GitHub Actions builds the tests for all CPU targets
+and runs them on the Windows x64/x86 runners. ARM64 tests are build-only
+on the hosted x64 runner. The workflow has not been remotely executed.

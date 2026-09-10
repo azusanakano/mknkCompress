@@ -29,7 +29,9 @@ foreach ($target in $targets) {
   New-Item -ItemType Directory -Force -Path $dist | Out-Null
   Copy-Item (Join-Path $build "$Configuration/mknkYahooCompress.exe") $dist -Force
   Copy-Item (Join-Path $root 'README.md') $dist -Force
+  Copy-Item (Join-Path $root 'DISTRIBUTION-README.txt') $dist -Force
   Copy-Item (Join-Path $root 'LICENSE') $dist -Force
+  Copy-Item (Join-Path $root 'BUILD-REPORT.txt') $dist -Force
 }
 
 Write-Host "Build complete: $root\dist" -ForegroundColor Green

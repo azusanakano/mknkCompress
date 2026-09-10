@@ -29,6 +29,7 @@
 #include <vector>
 
 #include "../resources/resource.h"
+#include "window-placement.h"
 
 #pragma comment(lib, "windowscodecs.lib")
 #pragma comment(lib, "ole32.lib")
@@ -43,7 +44,7 @@ namespace fs = std::filesystem;
 
 namespace {
 constexpr wchar_t kClassName[] = L"mknkYahooCompressNativeWindow";
-constexpr wchar_t kVersion[] = L"3.0.0 Yahoo Native";
+constexpr wchar_t kVersion[] = L"3.0.4 Yahoo Native";
 constexpr ULONGLONG kYahooTargetBytes = 5'000'000ull;
 constexpr UINT kYahooMaxEdge = 1200;
 constexpr UINT WM_APP_ITEM = WM_APP + 1;
@@ -51,8 +52,10 @@ constexpr UINT WM_APP_FINISHED = WM_APP + 2;
 constexpr int IDC_ADD = 1001, IDC_CLEAR = 1002, IDC_START = 1003, IDC_CANCEL = 1004;
 constexpr int IDC_LIST = 1010;
 constexpr int IDC_RULES = 1030, IDC_PRIVACY = 1031;
-constexpr int IDC_METADATA = 1050, IDC_OUTPUT = 1060, IDC_BROWSE = 1061;
-constexpr int IDC_SUFFIX = 1070, IDC_THEME = 1080, IDC_LIGHT = 1081, IDC_PROGRESS = 1090, IDC_STATUS = 1091;
+constexpr int IDC_METADATA = 1050, IDC_OUTPUT = 1060, IDC_BROWSE = 1061, IDC_OUTPUT_LABEL = 1062;
+constexpr int IDC_SUFFIX = 1070, IDC_SUFFIX_LABEL = 1071, IDC_SUFFIX_SAVE = 1072;
+constexpr int IDC_THEME = 1080, IDC_LIGHT = 1081, IDC_PROGRESS = 1090, IDC_STATUS = 1091;
+constexpr UINT_PTR kWindowPlacementTimer = 1;
 
 struct Settings {
   bool preserveMetadata = false;
@@ -90,6 +93,8 @@ std::vector<std::unique_ptr<QueueItem>> g_items;
 std::mutex g_itemsMutex;
 std::atomic_bool g_cancel{false}, g_running{false};
 std::jthread g_worker;
+bool g_windowPlacementReady = false;
+bool g_windowWasMaximized = false;
 
 std::wstring FormatBytes(ULONGLONG value) {
   const wchar_t* units[] = {L"B", L"KB", L"MB", L"GB"};
@@ -108,6 +113,11 @@ std::wstring IniPath() {
   return (dir / L"settings.ini").wstring();
 }
 
+bool IsValidSuffix(const std::wstring& suffix) {
+  if (suffix.size() > 64 || suffix.find_first_of(L"<>:\"/\\|?*") != std::wstring::npos) return false;
+  return std::none_of(suffix.begin(), suffix.end(), [](wchar_t c) { return c < 32; });
+}
+
 void LoadSettings() {
   const auto ini = IniPath(); wchar_t buf[1024]{};
   g_settings.preserveMetadata = GetPrivateProfileIntW(L"compression", L"metadata", 0, ini.c_str()) != 0;
@@ -115,6 +125,7 @@ void LoadSettings() {
   g_settings.light = GetPrivateProfileIntW(L"appearance", L"light", 0, ini.c_str()) != 0;
   GetPrivateProfileStringW(L"output", L"directory", L"", buf, 1024, ini.c_str()); g_settings.outputDir = buf;
   GetPrivateProfileStringW(L"output", L"suffix", L"_yahoo", buf, 1024, ini.c_str()); g_settings.suffix = buf;
+  if (g_settings.suffix.empty() || !IsValidSuffix(g_settings.suffix)) g_settings.suffix = L"_yahoo";
 }
 
 void WriteInt(const wchar_t* section, const wchar_t* key, int value) {
@@ -128,6 +139,17 @@ void SaveSettings() {
   WriteInt(L"appearance", L"light", g_settings.light);
   WritePrivateProfileStringW(L"output", L"directory", g_settings.outputDir.c_str(), IniPath().c_str());
   WritePrivateProfileStringW(L"output", L"suffix", g_settings.suffix.c_str(), IniPath().c_str());
+}
+
+void SaveWindowPlacement(HWND hwnd) {
+  KillTimer(hwnd, kWindowPlacementTimer);
+  if (g_windowPlacementReady) window_placement::Save(hwnd, IniPath().c_str(), g_windowWasMaximized);
+}
+
+void ScheduleWindowPlacementSave(HWND hwnd) {
+  // Creation/restoration sends move/size messages too. Do not overwrite the
+  // previous session until its placement has been restored completely.
+  if (g_windowPlacementReady) SetTimer(hwnd, kWindowPlacementTimer, 400, nullptr);
 }
 
 COLORREF Accent() { return g_settings.visualTheme == 0 ? RGB(39, 210, 225) : RGB(145, 91, 255); }
@@ -345,6 +367,7 @@ void CompressOne(size_t index, IWICImagingFactory* factory, const Settings& sett
   ComPtr<IWICBitmapSource> pixels; UINT w{},h{}; hr=PreparePixels(factory,original.Get(),pixels,w,h);
   if(FAILED(hr)){item->state=L"失敗: デコード";PostMessageW(g_window,WM_APP_ITEM,index,0);return;}
   Sample reference; if(FAILED(MakeSample(factory,pixels.Get(),reference))){item->state=L"失敗: 画質解析";PostMessageW(g_window,WM_APP_ITEM,index,0);return;}
+  const ULONGLONG effectiveTargetBytes=std::min(kYahooTargetBytes,item->inputSize?item->inputSize:kYahooTargetBytes);
   const auto definitions=CandidateDefinitions(); std::vector<Candidate> candidates;
   fs::path tempDir=fs::temp_directory_path()/L"mknkYahooCompress"; std::error_code ec;fs::create_directories(tempDir,ec);
   for(size_t n=0;n<definitions.size()&&!g_cancel;++n){
@@ -362,13 +385,13 @@ void CompressOne(size_t index, IWICImagingFactory* factory, const Settings& sett
   if(candidates.empty()){item->state=L"失敗: JPEGエンコード";PostMessageW(g_window,WM_APP_ITEM,index,0);return;}
   auto winner=candidates.end();
   for(auto it=candidates.begin();it!=candidates.end();++it) {
-    if(it->size>kYahooTargetBytes)continue;
+    if(it->size>effectiveTargetBytes)continue;
     if(winner==candidates.end() || it->score>winner->score+0.00001 ||
        (std::abs(it->score-winner->score)<=0.00001 && (it->quality>winner->quality ||
         (it->quality==winner->quality && it->subsampling>winner->subsampling)))) winner=it;
   }
   if(winner==candidates.end()){
-    item->state=L"失敗: 5MB以下の候補を生成できません";
+    item->state=item->inputSize<kYahooTargetBytes?L"変換中止: 元画像以下のJPGを生成できません":L"失敗: 5MB以下の候補を生成できません";
     for(auto& c:candidates)fs::remove(c.path,ec);
     PostMessageW(g_window,WM_APP_ITEM,index,0);return;
   }
@@ -377,12 +400,13 @@ void CompressOne(size_t index, IWICImagingFactory* factory, const Settings& sett
     const auto output=UniqueOutput(item->input,settings);fs::rename(winner->path,output,ec);if(ec){fs::copy_file(winner->path,output,fs::copy_options::none,ec);if(!ec)fs::remove(winner->path,ec);}
     if(ec)throw std::runtime_error("move");
     const auto savedSize=fs::file_size(output,ec);
-    if(ec || savedSize>kYahooTargetBytes){fs::remove(output,ec);throw std::runtime_error("limit");}
+    if(ec || savedSize>effectiveTargetBytes){fs::remove(output,ec);throw std::runtime_error("limit");}
     if(settings.preserveTimestamps){auto time=fs::last_write_time(item->input,ec);if(!ec)fs::last_write_time(output,time,ec);}
     item->output=output.wstring();item->outputSize=savedSize;
-    wchar_t state[160]{};swprintf_s(state,L"ヤフオク準拠完了  Q%d / 長辺%upx / %.2f%%",winner->quality,std::max(w,h),winner->score*100);item->state=state;
+    const double reduction=item->inputSize?100.0*(item->inputSize-savedSize)/item->inputSize:0.0;
+    wchar_t state[160]{};swprintf_s(state,L"ヤフオク準拠完了  Q%d / %.1f%%削減 / 長辺%upx / 画質%.2f%%",winner->quality,reduction,std::max(w,h),winner->score*100);item->state=state;
     winner->path.clear();
-  }catch(...){item->state=L"失敗: 5MB制限内で保存できません";}
+  }catch(...){item->state=L"失敗: 容量上限内で保存できません";}
   for(auto& c:candidates)if(!c.path.empty())fs::remove(c.path,ec);
   PostMessageW(g_window,WM_APP_ITEM,index,0);
 }
@@ -395,12 +419,20 @@ void Worker(Settings settings) {
   PostMessageW(g_window,WM_APP_FINISHED,0,0);CoUninitialize();
 }
 
-void CollectSettings(HWND hwnd) {
+bool CollectSettings(HWND hwnd,bool validateSuffix) {
   g_settings.preserveMetadata=Button_GetCheck(GetDlgItem(hwnd,IDC_METADATA))==BST_CHECKED;
   g_settings.light=Button_GetCheck(GetDlgItem(hwnd,IDC_LIGHT))==BST_CHECKED;
   g_settings.visualTheme=static_cast<int>(SendMessageW(GetDlgItem(hwnd,IDC_THEME),CB_GETCURSEL,0,0));
-  g_settings.outputDir=GetText(GetDlgItem(hwnd,IDC_OUTPUT));g_settings.suffix=GetText(GetDlgItem(hwnd,IDC_SUFFIX));
-  if(g_settings.suffix.empty())g_settings.suffix=L"_yahoo";SaveSettings();
+  g_settings.outputDir=GetText(GetDlgItem(hwnd,IDC_OUTPUT));
+  auto suffix=GetText(GetDlgItem(hwnd,IDC_SUFFIX));if(suffix.empty())suffix=L"_yahoo";
+  if(!IsValidSuffix(suffix)){
+    if(validateSuffix){
+      MessageBoxW(hwnd,L"接尾辞は64文字以内で指定し、次の文字は使用しないでください。\n< > : \" / \\ | ? *",L"接尾辞を保存できません",MB_OK|MB_ICONWARNING);
+      SetFocus(GetDlgItem(hwnd,IDC_SUFFIX));
+    }
+    SaveSettings();return false;
+  }
+  g_settings.suffix=suffix;SetText(GetDlgItem(hwnd,IDC_SUFFIX),g_settings.suffix);SaveSettings();return true;
 }
 
 void ChooseFiles(HWND hwnd) {
@@ -430,8 +462,10 @@ void Layout(HWND hwnd,int width,int height) {
   M(IDC_RULES,y,96);y+=108;
   M(IDC_PRIVACY,y,42);y+=52;
   M(IDC_METADATA,y,25);y+=38;
+  M(IDC_OUTPUT_LABEL,y,20);y+=23;
   MoveWindow(GetDlgItem(hwnd,IDC_OUTPUT),x,y,right-pad-76,28,TRUE);MoveWindow(GetDlgItem(hwnd,IDC_BROWSE),x+right-pad-68,y,68,28,TRUE);y+=38;
-  M(IDC_SUFFIX,y,28);
+  M(IDC_SUFFIX_LABEL,y,20);y+=23;
+  MoveWindow(GetDlgItem(hwnd,IDC_SUFFIX),x,y,right-pad-94,28,TRUE);MoveWindow(GetDlgItem(hwnd,IDC_SUFFIX_SAVE),x+right-pad-86,y,86,28,TRUE);
   MoveWindow(g_progress,pad,height-48,width-right-pad-gap,16,TRUE);MoveWindow(g_status,pad,height-29,width-right-pad-gap,22,TRUE);
   MoveWindow(GetDlgItem(hwnd,IDC_START),x,height-58,right-pad,38,TRUE);MoveWindow(GetDlgItem(hwnd,IDC_CANCEL),x,height-58,right-pad,38,TRUE);
 }
@@ -440,18 +474,21 @@ void CreateControls(HWND hwnd) {
   g_font=CreateFontW(-16,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH,L"Segoe UI");
   g_titleFont=CreateFontW(-31,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH,L"Segoe UI");
   auto title=Make(hwnd,L"STATIC",L"mknkYahooCompress",SS_LEFT,0,24,20,360,42);SendMessageW(title,WM_SETFONT,reinterpret_cast<WPARAM>(g_titleFont),TRUE);
-  Make(hwnd,L"STATIC",L"3.0.0 NATIVE  •  ヤフオク専用  •  JPG固定",SS_LEFT,0,27,63,460,25);
+  Make(hwnd,L"STATIC",L"ネコシステム社  •  3.0.4 NATIVE  •  ヤフオク専用JPG",SS_LEFT,0,27,63,460,25);
   Make(hwnd,L"BUTTON",L"画像を追加",BS_PUSHBUTTON,IDC_ADD,470,30,120,36);Make(hwnd,L"BUTTON",L"一覧を消去",BS_PUSHBUTTON,IDC_CLEAR,600,30,120,36);
   g_list=Make(hwnd,WC_LISTVIEWW,L"",LVS_REPORT|LVS_SHOWSELALWAYS|WS_BORDER,IDC_LIST,24,108,600,500);
   ListView_SetExtendedListViewStyle(g_list,LVS_EX_FULLROWSELECT|LVS_EX_DOUBLEBUFFER);
   LVCOLUMNW col{};col.mask=LVCF_TEXT|LVCF_WIDTH;const wchar_t* names[]={L"ファイル",L"元サイズ",L"状態",L"圧縮後"};int widths[]={260,90,210,130};for(int i=0;i<4;++i){col.pszText=const_cast<wchar_t*>(names[i]);col.cx=widths[i];ListView_InsertColumn(g_list,i,&col);}
   auto theme=Make(hwnd,L"COMBOBOX",L"",CBS_DROPDOWNLIST,IDC_THEME,0,0,100,100);SendMessageW(theme,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(L"反重力斥力場"));SendMessageW(theme,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(L"重力圧縮"));SendMessageW(theme,CB_SETCURSEL,g_settings.visualTheme,0);
   auto light=Make(hwnd,L"BUTTON",L"ライト表示",BS_AUTOCHECKBOX,IDC_LIGHT,0,0,100,24);Button_SetCheck(light,g_settings.light?BST_CHECKED:BST_UNCHECKED);
-  Make(hwnd,L"STATIC",L"ヤフオク規格へ自動最適化\r\n・JPG固定 / 1枚5MB以下\r\n・長辺1200px以下\r\n・最大10枚の出品画像に対応",SS_LEFT,IDC_RULES,0,0,100,96);
-  Make(hwnd,L"STATIC",L"容量内で知覚品質が最も高い候補を自動選択します。",SS_LEFT,IDC_PRIVACY,0,0,100,42);
+  Make(hwnd,L"STATIC",L"ヤフオク規格へ自動最適化\r\n・JPG固定 / 1枚5MB以下\r\n・元画像より大きくしない\r\n・長辺1200px以下",SS_LEFT,IDC_RULES,0,0,100,96);
+  Make(hwnd,L"STATIC",L"5MBかつ元画像容量内で、知覚品質が最も高い候補を選択します。",SS_LEFT,IDC_PRIVACY,0,0,100,42);
   auto metadata=Make(hwnd,L"BUTTON",L"撮影情報・ICCを保持（GPSに注意）",BS_AUTOCHECKBOX,IDC_METADATA,0,0,100,25);Button_SetCheck(metadata,g_settings.preserveMetadata?BST_CHECKED:BST_UNCHECKED);
+  Make(hwnd,L"STATIC",L"出力先（空欄なら元画像と同じ場所）",SS_LEFT,IDC_OUTPUT_LABEL,0,0,100,20);
   Make(hwnd,L"EDIT",g_settings.outputDir.c_str(),ES_AUTOHSCROLL|WS_BORDER,IDC_OUTPUT,0,0,100,28);Make(hwnd,L"BUTTON",L"参照",BS_PUSHBUTTON,IDC_BROWSE,0,0,60,28);
-  Make(hwnd,L"EDIT",g_settings.suffix.c_str(),ES_AUTOHSCROLL|WS_BORDER,IDC_SUFFIX,0,0,100,28);
+  Make(hwnd,L"STATIC",L"圧縮後の接尾辞（例：_yahoo）",SS_LEFT,IDC_SUFFIX_LABEL,0,0,100,20);
+  auto suffix=Make(hwnd,L"EDIT",g_settings.suffix.c_str(),ES_AUTOHSCROLL|WS_BORDER,IDC_SUFFIX,0,0,100,28);SendMessageW(suffix,EM_SETLIMITTEXT,64,0);
+  Make(hwnd,L"BUTTON",L"保存",BS_PUSHBUTTON,IDC_SUFFIX_SAVE,0,0,86,28);
   g_progress=Make(hwnd,PROGRESS_CLASSW,L"",PBS_SMOOTH,IDC_PROGRESS,0,0,100,16);SendMessageW(g_progress,PBM_SETRANGE32,0,100);
   g_status=Make(hwnd,L"STATIC",L"画像をドロップするとヤフオク用JPGへ自動変換します",SS_LEFT,IDC_STATUS,0,0,100,22);
   Make(hwnd,L"BUTTON",L"ヤフオク用JPGを作成",BS_DEFPUSHBUTTON,IDC_START,0,0,100,38);auto cancel=Make(hwnd,L"BUTTON",L"キャンセル",BS_PUSHBUTTON,IDC_CANCEL,0,0,100,38);ShowWindow(cancel,SW_HIDE);
@@ -459,7 +496,7 @@ void CreateControls(HWND hwnd) {
 
 void StartCompression(HWND hwnd) {
   if (g_running || g_items.empty()) return;
-  CollectSettings(hwnd);
+  if(!CollectSettings(hwnd,true))return;
   g_cancel=false;g_running=true;
   for(size_t i=0;i<g_items.size();++i){g_items[i]->state=L"待機中";g_items[i]->output.clear();g_items[i]->outputSize=0;RefreshListRow(i);}
   ShowWindow(GetDlgItem(hwnd,IDC_START),SW_HIDE);
@@ -470,7 +507,13 @@ void StartCompression(HWND hwnd) {
 LRESULT CALLBACK WindowProc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp) {
   switch(msg){
     case WM_CREATE:{g_window=hwnd;LoadSettings();CreateControls(hwnd);DragAcceptFiles(hwnd,TRUE);BOOL dark=TRUE;DwmSetWindowAttribute(hwnd,20,&dark,sizeof(dark));return 0;}
-    case WM_SIZE:Layout(hwnd,LOWORD(lp),HIWORD(lp));return 0;
+    case WM_SIZE:
+      if(wp==SIZE_MAXIMIZED||wp==SIZE_RESTORED)g_windowWasMaximized=(wp==SIZE_MAXIMIZED);
+      if(wp!=SIZE_MINIMIZED)Layout(hwnd,LOWORD(lp),HIWORD(lp));
+      ScheduleWindowPlacementSave(hwnd);return 0;
+    case WM_MOVE:ScheduleWindowPlacementSave(hwnd);return 0;
+    case WM_EXITSIZEMOVE:SaveWindowPlacement(hwnd);return 0;
+    case WM_TIMER:if(wp==kWindowPlacementTimer){SaveWindowPlacement(hwnd);return 0;}break;
     case WM_ERASEBKGND:return 1;
     case WM_PAINT:{PAINTSTRUCT ps{};HDC dc=BeginPaint(hwnd,&ps);RECT r{};GetClientRect(hwnd,&r);HBRUSH bg=CreateSolidBrush(Background());FillRect(dc,&r,bg);DeleteObject(bg);HPEN pen=CreatePen(PS_SOLID,2,Accent());auto old=SelectObject(dc,pen);MoveToEx(dc,24,94,nullptr);LineTo(dc,r.right-24,94);SelectObject(dc,old);DeleteObject(pen);EndPaint(hwnd,&ps);return 0;}
     case WM_CTLCOLORSTATIC:{HDC dc=reinterpret_cast<HDC>(wp);SetTextColor(dc,TextColor());SetBkColor(dc,Background());static HBRUSH brush{};if(brush)DeleteObject(brush);brush=CreateSolidBrush(Background());return reinterpret_cast<LRESULT>(brush);}
@@ -479,14 +522,17 @@ LRESULT CALLBACK WindowProc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp) {
       if(id==IDC_ADD)ChooseFiles(hwnd);
       else if(id==IDC_CLEAR&&!g_running){g_items.clear();ListView_DeleteAllItems(g_list);SetText(g_status,L"一覧を消去しました");}
       else if(id==IDC_BROWSE)ChooseFolder(hwnd);
-      else if(id==IDC_THEME||id==IDC_LIGHT){CollectSettings(hwnd);InvalidateRect(hwnd,nullptr,TRUE);}
+      else if(id==IDC_SUFFIX_SAVE){if(CollectSettings(hwnd,true))SetText(g_status,std::wstring(L"圧縮後の接尾辞を保存しました: ")+g_settings.suffix);}
+      else if(id==IDC_THEME||id==IDC_LIGHT){CollectSettings(hwnd,false);InvalidateRect(hwnd,nullptr,TRUE);}
       else if(id==IDC_START){StartCompression(hwnd);}
       else if(id==IDC_CANCEL&&g_running){g_cancel=true;SetText(g_status,L"現在の候補処理が終わり次第キャンセルします…");}
       return 0;}
     case WM_APP_ITEM:{size_t i=static_cast<size_t>(wp);RefreshListRow(i);if(lp){const int done=LOWORD(lp),total=HIWORD(lp);SendMessageW(g_progress,PBM_SETPOS,total?done*100/total:0,0);SetText(g_status,L"処理中: "+std::to_wstring(done)+L" / "+std::to_wstring(total));}return 0;}
     case WM_APP_FINISHED:{g_running=false;ShowWindow(GetDlgItem(hwnd,IDC_CANCEL),SW_HIDE);ShowWindow(GetDlgItem(hwnd,IDC_START),SW_SHOW);SetText(g_status,wp?L"圧縮エンジンを初期化できませんでした":g_cancel?L"圧縮をキャンセルしました":L"圧縮が完了しました");return 0;}
-    case WM_CLOSE:if(g_running){if(MessageBoxW(hwnd,L"圧縮を中止して終了しますか？",L"mknkYahooCompress",MB_YESNO|MB_ICONQUESTION)!=IDYES)return 0;g_cancel=true;}DestroyWindow(hwnd);return 0;
-    case WM_DESTROY:SaveSettings();g_cancel=true;if(g_worker.joinable())g_worker.join();DeleteObject(g_font);DeleteObject(g_titleFont);PostQuitMessage(0);return 0;
+    case WM_CLOSE:if(g_running){if(MessageBoxW(hwnd,L"圧縮を中止して終了しますか？",L"ネコシステム社 mknkYahooCompress",MB_YESNO|MB_ICONQUESTION)!=IDYES)return 0;g_cancel=true;}else if(!CollectSettings(hwnd,true))return 0;SaveWindowPlacement(hwnd);DestroyWindow(hwnd);return 0;
+    case WM_QUERYENDSESSION:SaveWindowPlacement(hwnd);SaveSettings();return TRUE;
+    case WM_ENDSESSION:if(wp){SaveWindowPlacement(hwnd);SaveSettings();}return 0;
+    case WM_DESTROY:g_windowPlacementReady=false;KillTimer(hwnd,kWindowPlacementTimer);SaveSettings();g_cancel=true;if(g_worker.joinable())g_worker.join();DeleteObject(g_font);DeleteObject(g_titleFont);PostQuitMessage(0);return 0;
   }
   return DefWindowProcW(hwnd,msg,wp,lp);
 }
@@ -496,6 +542,9 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show) {
   g_instance=instance;SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
   CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);INITCOMMONCONTROLSEX common{sizeof(common),ICC_LISTVIEW_CLASSES|ICC_BAR_CLASSES|ICC_PROGRESS_CLASS};InitCommonControlsEx(&common);
   WNDCLASSEXW wc{sizeof(wc)};wc.style=CS_HREDRAW|CS_VREDRAW;wc.lpfnWndProc=WindowProc;wc.hInstance=instance;wc.hIcon=LoadIconW(instance,MAKEINTRESOURCEW(IDI_APP_ICON));wc.hCursor=LoadCursorW(nullptr,IDC_ARROW);wc.lpszClassName=kClassName;wc.hIconSm=wc.hIcon;RegisterClassExW(&wc);
-  HWND hwnd=CreateWindowExW(0,kClassName,L"mknkYahooCompress - ヤフオク専用JPG圧縮",WS_OVERLAPPEDWINDOW|WS_CLIPCHILDREN,CW_USEDEFAULT,CW_USEDEFAULT,1180,790,nullptr,nullptr,instance,nullptr);
-  if(!hwnd){CoUninitialize();return 1;}ShowWindow(hwnd,show);UpdateWindow(hwnd);MSG msg{};while(GetMessageW(&msg,nullptr,0,0)>0){TranslateMessage(&msg);DispatchMessageW(&msg);}CoUninitialize();return static_cast<int>(msg.wParam);
+  HWND hwnd=CreateWindowExW(0,kClassName,L"mknkYahooCompress - ネコシステム社 / ヤフオク専用JPG圧縮",WS_OVERLAPPEDWINDOW|WS_CLIPCHILDREN,CW_USEDEFAULT,CW_USEDEFAULT,1180,790,nullptr,nullptr,instance,nullptr);
+  if(!hwnd){CoUninitialize();return 1;}
+  if(!window_placement::Restore(hwnd,IniPath().c_str()))ShowWindow(hwnd,show);
+  g_windowPlacementReady=true;
+  UpdateWindow(hwnd);MSG msg{};while(GetMessageW(&msg,nullptr,0,0)>0){TranslateMessage(&msg);DispatchMessageW(&msg);}CoUninitialize();return static_cast<int>(msg.wParam);
 }
