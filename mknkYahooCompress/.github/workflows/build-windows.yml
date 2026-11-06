@@ -39,10 +39,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Configure
-        run: cmake -S . -B build/${{ matrix.arch }} -A ${{ matrix.cmake_arch }} -DMKNK_BUILD_WINDOW_TESTS=ON
+        run: cmake -S . -B build/${{ matrix.arch }} -A ${{ matrix.cmake_arch }} -DMKNK_BUILD_WINDOW_TESTS=ON -DMKNK_BUILD_COMPRESSION_TESTS=ON
       - name: Build
         run: cmake --build build/${{ matrix.arch }} --config Release --parallel
-      - name: Window placement integration tests
+      - name: Native integration tests
         if: matrix.arch != 'ARM64'
         run: ctest --test-dir build/${{ matrix.arch }} -C Release --output-on-failure
       - name: Stage

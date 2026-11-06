@@ -49,6 +49,7 @@ constexpr ULONGLONG kYahooTargetBytes = 5'000'000ull;
 constexpr UINT kYahooMaxEdge = 1200;
 constexpr UINT WM_APP_ITEM = WM_APP + 1;
 constexpr UINT WM_APP_FINISHED = WM_APP + 2;
+constexpr UINT WM_APP_PROGRESS = WM_APP + 3;
 constexpr int IDC_ADD = 1001, IDC_CLEAR = 1002, IDC_START = 1003, IDC_CANCEL = 1004;
 constexpr int IDC_LIST = 1010;
 constexpr int IDC_RULES = 1030, IDC_PRIVACY = 1031;
@@ -74,6 +75,7 @@ struct QueueItem {
   int candidateCount = 0;
   double score = 0;
   std::wstring state = L"待機中";
+  bool completed = false;
 };
 
 struct Sample { UINT width = 0, height = 0; std::vector<BYTE> bgr; };
@@ -164,8 +166,13 @@ std::wstring GetText(HWND control) {
 }
 
 void RefreshListRow(size_t i) {
-  if (!g_list || i >= g_items.size()) return;
-  auto& item = *g_items[i];
+  if (!g_list) return;
+  QueueItem item;
+  {
+    std::lock_guard lock(g_itemsMutex);
+    if (i >= g_items.size()) return;
+    item = *g_items[i];
+  }
   std::wstring filename = fs::path(item.input).filename().wstring();
   LVITEMW row{}; row.mask = LVIF_TEXT; row.iItem = static_cast<int>(i); row.iSubItem = 0;
   row.pszText = filename.data();
@@ -187,20 +194,32 @@ bool IsSupportedExtension(const fs::path& p) {
   return extensions.contains(e);
 }
 
-void AddPath(const fs::path& p) {
-  if (g_running) return;
+size_t AddPath(const fs::path& p) {
+  if (g_running) return 0;
   std::error_code ec;
   if (fs::is_directory(p, ec)) {
+    size_t accepted = 0;
     for (fs::recursive_directory_iterator it(p, fs::directory_options::skip_permission_denied, ec), end; it != end; it.increment(ec)) {
-      if (!ec && it->is_regular_file(ec) && IsSupportedExtension(it->path())) AddPath(it->path());
+      if (!ec && it->is_regular_file(ec) && IsSupportedExtension(it->path())) accepted += AddPath(it->path());
     }
-    return;
+    return accepted;
   }
-  if (!fs::is_regular_file(p, ec) || !IsSupportedExtension(p)) return;
+  if (!fs::is_regular_file(p, ec) || !IsSupportedExtension(p)) return 0;
   const auto canonical = fs::weakly_canonical(p, ec).wstring();
-  for (const auto& existing : g_items) if (_wcsicmp(existing->input.c_str(), canonical.c_str()) == 0) return;
+  if (ec) return 0;
   auto item = std::make_unique<QueueItem>(); item->input = canonical; item->inputSize = fs::file_size(p, ec);
+  if (ec) return 0;
+  for (size_t i = 0; i < g_items.size(); ++i) {
+    if (_wcsicmp(g_items[i]->input.c_str(), canonical.c_str()) != 0) continue;
+    // An explicit addition requests another compression, even for a completed
+    // path. Reuse its row while keeping pending duplicates deduplicated.
+    if (!g_items[i]->completed) return 0;
+    g_items[i] = std::move(item);
+    RefreshListRow(i);
+    return 1;
+  }
   g_items.push_back(std::move(item)); RefreshListRow(g_items.size() - 1);
+  return 1;
 }
 
 HRESULT LoadFrame(IWICImagingFactory* factory, const fs::path& path, ComPtr<IWICBitmapFrameDecode>& frame) {
@@ -360,16 +379,38 @@ std::wstring HResultText(HRESULT hr) {
   std::wstring result=message?message:L"画像コーデックで処理できません"; if(message)LocalFree(message); return result;
 }
 
+void PublishItem(size_t index, const QueueItem& item) {
+  {
+    std::lock_guard lock(g_itemsMutex);
+    *g_items[index] = item;
+  }
+  PostMessageW(g_window, WM_APP_ITEM, index, 0);
+}
+
 void CompressOne(size_t index, IWICImagingFactory* factory, const Settings& settings) {
-  QueueItem* item=g_items[index].get(); item->state=L"解析中"; PostMessageW(g_window,WM_APP_ITEM,index,0);
+  QueueItem result;
+  {
+    std::lock_guard lock(g_itemsMutex);
+    result = *g_items[index];
+  }
+  QueueItem* item = &result;
+  std::error_code ec;
+  item->inputSize = fs::file_size(item->input, ec);
+  if (ec) {
+    item->inputSize = 0;
+    item->state = L"失敗: 元画像の容量を取得できません";
+    PublishItem(index, *item);
+    return;
+  }
+  item->state=L"解析中"; PublishItem(index, *item);
   ComPtr<IWICBitmapFrameDecode> original; HRESULT hr=LoadFrame(factory,item->input,original);
-  if(FAILED(hr)){item->state=L"失敗: "+HResultText(hr);PostMessageW(g_window,WM_APP_ITEM,index,0);return;}
+  if(FAILED(hr)){item->state=L"失敗: "+HResultText(hr);PublishItem(index, *item);return;}
   ComPtr<IWICBitmapSource> pixels; UINT w{},h{}; hr=PreparePixels(factory,original.Get(),pixels,w,h);
-  if(FAILED(hr)){item->state=L"失敗: デコード";PostMessageW(g_window,WM_APP_ITEM,index,0);return;}
-  Sample reference; if(FAILED(MakeSample(factory,pixels.Get(),reference))){item->state=L"失敗: 画質解析";PostMessageW(g_window,WM_APP_ITEM,index,0);return;}
+  if(FAILED(hr)){item->state=L"失敗: デコード";PublishItem(index, *item);return;}
+  Sample reference; if(FAILED(MakeSample(factory,pixels.Get(),reference))){item->state=L"失敗: 画質解析";PublishItem(index, *item);return;}
   const ULONGLONG effectiveTargetBytes=std::min(kYahooTargetBytes,item->inputSize?item->inputSize:kYahooTargetBytes);
   const auto definitions=CandidateDefinitions(); std::vector<Candidate> candidates;
-  fs::path tempDir=fs::temp_directory_path()/L"mknkYahooCompress"; std::error_code ec;fs::create_directories(tempDir,ec);
+  fs::path tempDir=fs::temp_directory_path()/L"mknkYahooCompress"; fs::create_directories(tempDir,ec);
   for(size_t n=0;n<definitions.size()&&!g_cancel;++n){
     const auto [q,sub]=definitions[n]; fs::path temp=tempDir/(L"candidate-"+std::to_wstring(GetCurrentProcessId())+L"-"+std::to_wstring(index)+L"-"+std::to_wstring(n)+L".jpg");
     fs::remove(temp,ec); hr=EncodeJpeg(factory,pixels.Get(),original.Get(),temp,q,sub,settings.preserveMetadata);
@@ -379,10 +420,10 @@ void CompressOne(size_t index, IWICImagingFactory* factory, const Settings& sett
     if(!cv||FAILED(cv->Initialize(decoded.Get(),GUID_WICPixelFormat24bppBGR,WICBitmapDitherTypeNone,nullptr,0,WICBitmapPaletteTypeCustom))){fs::remove(temp,ec);continue;}
     Sample sample;if(FAILED(MakeSample(factory,cv.Get(),sample))){fs::remove(temp,ec);continue;}
     candidates.push_back({temp,fs::file_size(temp,ec),q,sub,PerceptualScore(reference,sample)});
-    item->state=L"候補を比較中 "+std::to_wstring(n+1)+L" / "+std::to_wstring(definitions.size());PostMessageW(g_window,WM_APP_ITEM,index,0);
+    item->state=L"候補を比較中 "+std::to_wstring(n+1)+L" / "+std::to_wstring(definitions.size());PublishItem(index, *item);
   }
-  if(g_cancel){item->state=L"キャンセル";for(auto& c:candidates)fs::remove(c.path,ec);PostMessageW(g_window,WM_APP_ITEM,index,0);return;}
-  if(candidates.empty()){item->state=L"失敗: JPEGエンコード";PostMessageW(g_window,WM_APP_ITEM,index,0);return;}
+  if(g_cancel){item->state=L"キャンセル";for(auto& c:candidates)fs::remove(c.path,ec);PublishItem(index, *item);return;}
+  if(candidates.empty()){item->state=L"失敗: JPEGエンコード";PublishItem(index, *item);return;}
   auto winner=candidates.end();
   for(auto it=candidates.begin();it!=candidates.end();++it) {
     if(it->size>effectiveTargetBytes)continue;
@@ -393,7 +434,7 @@ void CompressOne(size_t index, IWICImagingFactory* factory, const Settings& sett
   if(winner==candidates.end()){
     item->state=item->inputSize<kYahooTargetBytes?L"変換中止: 元画像以下のJPGを生成できません":L"失敗: 5MB以下の候補を生成できません";
     for(auto& c:candidates)fs::remove(c.path,ec);
-    PostMessageW(g_window,WM_APP_ITEM,index,0);return;
+    PublishItem(index, *item);return;
   }
   item->candidateCount=static_cast<int>(candidates.size());item->selectedQuality=winner->quality;item->score=winner->score;
   try{
@@ -406,17 +447,44 @@ void CompressOne(size_t index, IWICImagingFactory* factory, const Settings& sett
     const double reduction=item->inputSize?100.0*(item->inputSize-savedSize)/item->inputSize:0.0;
     wchar_t state[160]{};swprintf_s(state,L"ヤフオク準拠完了  Q%d / %.1f%%削減 / 長辺%upx / 画質%.2f%%",winner->quality,reduction,std::max(w,h),winner->score*100);item->state=state;
     winner->path.clear();
+    item->completed=true;
   }catch(...){item->state=L"失敗: 容量上限内で保存できません";}
   for(auto& c:candidates)if(!c.path.empty())fs::remove(c.path,ec);
-  PostMessageW(g_window,WM_APP_ITEM,index,0);
+  PublishItem(index, *item);
 }
 
-void Worker(Settings settings) {
-  CoInitializeEx(nullptr,COINIT_MULTITHREADED);ComPtr<IWICImagingFactory> factory;
-  HRESULT hr=CoCreateInstance(CLSID_WICImagingFactory,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&factory));
-  if(FAILED(hr)){PostMessageW(g_window,WM_APP_FINISHED,1,0);CoUninitialize();return;}
-  for(size_t i=0;i<g_items.size()&&!g_cancel;++i){CompressOne(i,factory.Get(),settings);PostMessageW(g_window,WM_APP_ITEM,i,MAKELPARAM(i+1,g_items.size()));}
-  PostMessageW(g_window,WM_APP_FINISHED,0,0);CoUninitialize();
+std::vector<size_t> PrepareCompressionBatch() {
+  std::vector<size_t> batch;
+  for (size_t i = 0; i < g_items.size(); ++i) {
+    auto& item = *g_items[i];
+    if (item.completed) continue;
+    item.state = L"待機中"; item.output.clear(); item.outputSize = 0;
+    item.selectedQuality = 0; item.candidateCount = 0; item.score = 0;
+    batch.push_back(i); RefreshListRow(i);
+  }
+  return batch;
+}
+
+void Worker(Settings settings, std::vector<size_t> batch) {
+  if (batch.empty()) return;
+  const HRESULT apartment = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+  if (FAILED(apartment)) {
+    PostMessageW(g_window, WM_APP_FINISHED, 1, 0);
+    return;
+  }
+  HRESULT engine;
+  {
+    ComPtr<IWICImagingFactory> factory;
+    engine = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
+    if (SUCCEEDED(engine)) {
+      for (size_t done = 0; done < batch.size() && !g_cancel; ++done) {
+        CompressOne(batch[done], factory.Get(), settings);
+        PostMessageW(g_window, WM_APP_PROGRESS, done + 1, static_cast<LPARAM>(batch.size()));
+      }
+    }
+  }
+  CoUninitialize();
+  PostMessageW(g_window, WM_APP_FINISHED, FAILED(engine) ? 1 : 0, 0);
 }
 
 bool CollectSettings(HWND hwnd,bool validateSuffix) {
@@ -436,6 +504,10 @@ bool CollectSettings(HWND hwnd,bool validateSuffix) {
 }
 
 void ChooseFiles(HWND hwnd) {
+  if (g_running) {
+    SetText(g_status, L"圧縮中のため追加できません。完了後にもう一度追加してください");
+    return;
+  }
   ComPtr<IFileOpenDialog> dialog;if(FAILED(CoCreateInstance(CLSID_FileOpenDialog,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&dialog))))return;
   dialog->SetOptions(FOS_ALLOWMULTISELECT|FOS_FORCEFILESYSTEM|FOS_FILEMUSTEXIST);
   COMDLG_FILTERSPEC filters[]={{L"画像",L"*.jpg;*.jpeg;*.png;*.bmp;*.tif;*.tiff;*.gif;*.webp;*.heic;*.heif;*.avif"},{L"すべて",L"*.*"}};dialog->SetFileTypes(2,filters);
@@ -497,11 +569,13 @@ void CreateControls(HWND hwnd) {
 void StartCompression(HWND hwnd) {
   if (g_running || g_items.empty()) return;
   if(!CollectSettings(hwnd,true))return;
+  auto batch=PrepareCompressionBatch();
+  if(batch.empty()){SetText(g_status,L"新たに圧縮する画像はありません");return;}
   g_cancel=false;g_running=true;
-  for(size_t i=0;i<g_items.size();++i){g_items[i]->state=L"待機中";g_items[i]->output.clear();g_items[i]->outputSize=0;RefreshListRow(i);}
+  SendMessageW(g_progress,PBM_SETPOS,0,0);
   ShowWindow(GetDlgItem(hwnd,IDC_START),SW_HIDE);
   ShowWindow(GetDlgItem(hwnd,IDC_CANCEL),SW_SHOW);
-  g_worker=std::jthread(Worker,g_settings);
+  g_worker=std::jthread(Worker,g_settings,std::move(batch));
 }
 
 LRESULT CALLBACK WindowProc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp) {
@@ -517,7 +591,31 @@ LRESULT CALLBACK WindowProc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp) {
     case WM_ERASEBKGND:return 1;
     case WM_PAINT:{PAINTSTRUCT ps{};HDC dc=BeginPaint(hwnd,&ps);RECT r{};GetClientRect(hwnd,&r);HBRUSH bg=CreateSolidBrush(Background());FillRect(dc,&r,bg);DeleteObject(bg);HPEN pen=CreatePen(PS_SOLID,2,Accent());auto old=SelectObject(dc,pen);MoveToEx(dc,24,94,nullptr);LineTo(dc,r.right-24,94);SelectObject(dc,old);DeleteObject(pen);EndPaint(hwnd,&ps);return 0;}
     case WM_CTLCOLORSTATIC:{HDC dc=reinterpret_cast<HDC>(wp);SetTextColor(dc,TextColor());SetBkColor(dc,Background());static HBRUSH brush{};if(brush)DeleteObject(brush);brush=CreateSolidBrush(Background());return reinterpret_cast<LRESULT>(brush);}
-    case WM_DROPFILES:{HDROP drop=reinterpret_cast<HDROP>(wp);UINT count=DragQueryFileW(drop,0xFFFFFFFF,nullptr,0);for(UINT i=0;i<count;++i){UINT n=DragQueryFileW(drop,i,nullptr,0);std::wstring path(static_cast<size_t>(n)+1,L'\0');DragQueryFileW(drop,i,path.data(),n+1);path.resize(n);AddPath(path);}DragFinish(drop);SetText(g_status,std::to_wstring(g_items.size())+L"枚を追加しました。自動圧縮を開始します…");StartCompression(hwnd);return 0;}
+    case WM_DROPFILES: {
+      HDROP drop = reinterpret_cast<HDROP>(wp);
+      if (g_running) {
+        DragFinish(drop);
+        SetText(g_status, L"圧縮中のため追加できません。完了後にもう一度ドロップしてください");
+        return 0;
+      }
+      size_t accepted = 0;
+      const UINT count = DragQueryFileW(drop, 0xFFFFFFFF, nullptr, 0);
+      for (UINT i = 0; i < count; ++i) {
+        const UINT n = DragQueryFileW(drop, i, nullptr, 0);
+        std::wstring path(static_cast<size_t>(n) + 1, L'\0');
+        DragQueryFileW(drop, i, path.data(), n + 1);
+        path.resize(n);
+        accepted += AddPath(path);
+      }
+      DragFinish(drop);
+      if (accepted == 0) {
+        SetText(g_status, L"追加できる画像はありません");
+        return 0;
+      }
+      SetText(g_status, std::to_wstring(accepted) + L"枚を追加しました。自動圧縮を開始します…");
+      StartCompression(hwnd);
+      return 0;
+    }
     case WM_COMMAND:{const int id=LOWORD(wp);
       if(id==IDC_ADD)ChooseFiles(hwnd);
       else if(id==IDC_CLEAR&&!g_running){g_items.clear();ListView_DeleteAllItems(g_list);SetText(g_status,L"一覧を消去しました");}
@@ -527,8 +625,24 @@ LRESULT CALLBACK WindowProc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp) {
       else if(id==IDC_START){StartCompression(hwnd);}
       else if(id==IDC_CANCEL&&g_running){g_cancel=true;SetText(g_status,L"現在の候補処理が終わり次第キャンセルします…");}
       return 0;}
-    case WM_APP_ITEM:{size_t i=static_cast<size_t>(wp);RefreshListRow(i);if(lp){const int done=LOWORD(lp),total=HIWORD(lp);SendMessageW(g_progress,PBM_SETPOS,total?done*100/total:0,0);SetText(g_status,L"処理中: "+std::to_wstring(done)+L" / "+std::to_wstring(total));}return 0;}
-    case WM_APP_FINISHED:{g_running=false;ShowWindow(GetDlgItem(hwnd,IDC_CANCEL),SW_HIDE);ShowWindow(GetDlgItem(hwnd,IDC_START),SW_SHOW);SetText(g_status,wp?L"圧縮エンジンを初期化できませんでした":g_cancel?L"圧縮をキャンセルしました":L"圧縮が完了しました");return 0;}
+    case WM_APP_ITEM:
+      RefreshListRow(static_cast<size_t>(wp));
+      return 0;
+    case WM_APP_PROGRESS: {
+      const auto done = static_cast<size_t>(wp);
+      const auto total = static_cast<size_t>(lp);
+      const int percent = total ? static_cast<int>(100.0 * done / total) : 0;
+      SendMessageW(g_progress, PBM_SETPOS, percent, 0);
+      SetText(g_status, L"処理中: " + std::to_wstring(done) + L" / " + std::to_wstring(total));
+      return 0;
+    }
+    case WM_APP_FINISHED:
+      if (g_worker.joinable()) g_worker.join();
+      g_running = false;
+      ShowWindow(GetDlgItem(hwnd, IDC_CANCEL), SW_HIDE);
+      ShowWindow(GetDlgItem(hwnd, IDC_START), SW_SHOW);
+      SetText(g_status, wp ? L"圧縮エンジンを初期化できませんでした" : g_cancel ? L"圧縮をキャンセルしました" : L"圧縮が完了しました");
+      return 0;
     case WM_CLOSE:if(g_running){if(MessageBoxW(hwnd,L"圧縮を中止して終了しますか？",L"ネコシステム社 mknkYahooCompress",MB_YESNO|MB_ICONQUESTION)!=IDYES)return 0;g_cancel=true;}else if(!CollectSettings(hwnd,true))return 0;SaveWindowPlacement(hwnd);DestroyWindow(hwnd);return 0;
     case WM_QUERYENDSESSION:SaveWindowPlacement(hwnd);SaveSettings();return TRUE;
     case WM_ENDSESSION:if(wp){SaveWindowPlacement(hwnd);SaveSettings();}return 0;

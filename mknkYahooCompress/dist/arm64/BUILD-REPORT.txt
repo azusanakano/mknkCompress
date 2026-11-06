@@ -1,56 +1,73 @@
-mknkYahooCompress 3.0.4 Native - VALIDATION REPORT
-===================================================
+mknkYahooCompress 3.0.4 Native - REVIEW FIX VALIDATION REPORT
+==========================================================
 
-Date: 2026-09-10
+Date: 2026-11-06 (Asia/Tokyo)
 Provider: ネコシステム社 / Neko System
 Target: Windows 10/11, x64/x86/ARM64
 Runtime: Win32 + Windows Imaging Component
 
 Changes
 -------
-- Automatically save and restore normal window position and size.
-- Retain maximized state and the normal restore rectangle.
-- Reopen a minimized window in its last normal/maximized state.
-- Track the last non-minimized WM_SIZE state rather than relying on
-  GetWindowPlacement flags to remember maximize-before-minimize.
-- Save after move/resize, on normal close, and on session-end notifications.
-- Debounce move/size events; protect saved data during initial restoration.
-- Validate the checksummed placement record; use defaults for invalid data.
-- Use GetWindowPlacement/SetWindowPlacement together to preserve workspace
-  coordinates and use Windows' recovery of completely offscreen placement.
-- Store the new window section in the existing settings.ini file.
-
-Compatibility and branding review
----------------------------------
-- Product remains mknkYahooCompress by ネコシステム社.
-- EXE filename, window class, application identity, and settings directory
-  retain their v3.0.3 values. No brand migration is introduced.
-- Suffix, output directory, metadata and appearance settings remain in place.
-- Compression processing is unchanged: JPG-only, <= original size and
-  <= 5,000,000 bytes, maximum long edge 1200px.
+- Refresh the current source size for retries after an input is replaced.
+- Reject additions during processing and explicitly ask the user to retry
+  after completion or cancellation.
+- Count accepted additions rather than all entries in the existing list.
+- Publish worker results and copy display snapshots under a mutex.
+- Release worker WIC objects before uninitializing its COM apartment.
+- Carry progress totals without the previous 16-bit truncation.
+- Preserve completed entries and compress only eligible entries.
+- Identify the new review-fix Windows, all-architectures and source ZIPs.
 
 Validation performed
 --------------------
-PASS  Existing static source/feature assertions: 33 checks
-PASS  Existing JavaScript reference algorithm tests: 16 checks
-PASS  GitHub Actions workflow YAML parse
-PASS  LLVM-MinGW 20250613 UCRT/Clang 20.1.7 cross-build: x64/x86/ARM64
-PASS  Window-placement Win32 integration-test executable: compiled for x64
-PASS  PE architecture, GUI subsystem, version 3.0.4.0, company metadata
-PASS  ASLR / DEP / Control Flow Guard flags
-PASS  No dynamically imported libc++.dll / libunwind.dll / MSVC runtime DLLs
-PASS  Source/release/GitHub ZIP integrity and SHA-256 verification
+PASS  Static source/feature assertions: 33 checks.
+PASS  JavaScript reference algorithm checks: 16 checks.
+PASS  Native compression-queue tests: 9 scenarios on Windows x64.
+PASS  Native compression-queue tests: 9 scenarios on Windows x86.
+PASS  Asynchronous WindowProc tests: 6 scenarios on Windows x64.
+PASS  Asynchronous WindowProc tests: 6 scenarios on Windows x86.
+PASS  Queue and WindowProc test executables compiled for ARM64.
+PASS  Existing native window-placement tests: 9 scenarios on Windows x64.
+PASS  LLVM-MinGW 20250613 UCRT / Clang 20.1.7 application builds:
+      x64, x86 and ARM64.
+PASS  All application EXEs: architecture, GUI subsystem, ASLR, DEP and CFG;
+      Japanese CompanyName resource; no dynamic C++ runtime DLL imports.
+PASS  Independent implementation review: no actionable introduced findings.
+PASS  Regression assertion review, including bounded cancellation scheduling.
+PASS  Five release ZIPs: all archived files match their verified sources;
+      SHA-256 checksum manifest generated and checked.
 
-Not performed
--------------
-- Windows 10/11 native launch and placement/resize interaction.
-- Runtime execution of the 9 window-placement integration scenarios.
-  A Wine attempt could not start because this environment disallows the
-  required socket. This is not recorded as a passing runtime test.
-- MSVC / GitHub Actions build execution in this environment.
-- Physical multi-monitor, mixed-DPI and Windows logoff interaction.
+Regression coverage
+-------------------
+The queue tests use real BMP/JPEG files and WIC. Worker initializes and
+uninitializes its own COM apartment; the test does not keep an outer COM
+apartment alive. Cases include repaired inputs that grow or shrink,
+deleted inputs, preserved completed results and explicit re-addition.
 
-The source includes tests/window-placement.cpp (temporary INI, no user
-settings mutation). GitHub Actions builds the tests for all CPU targets
-and runs them on the Windows x64/x86 runners. ARM64 tests are build-only
-on the hosted x64 runner. The workflow has not been remotely executed.
+The UI tests use the real WindowProc, controls, asynchronous worker and
+drop messages. Test-only API-boundary redirection isolates the settings
+folder, and a notification gate synchronizes the cancellation scenario.
+Fixtures use temporary files. The tests verify busy
+drop rejection, accepted-addition counts, an all-completed idle start,
+completed-result retention, same-path re-addition, directly adding a prior
+output JPEG, and a drop accepting zero images.
+
+Cancellation is triggered by an actual candidate notification for the
+second image, after the first completes while the third remains pending.
+The test checks that resuming processes only the two remaining images.
+The real progress handler is also checked at 32,768/65,536 (50%) and
+65,536/65,536 (100%); this is a message-boundary test, not a compression
+run containing 65,536 actual input images.
+
+Platform limits
+---------------
+- ARM64 application and test executables were built but not run on ARM64
+  hardware.
+- MSVC/CMake and remote GitHub Actions execution were not performed.
+- Automated hidden-window/message tests do not cover actual mouse
+  operation or manual file-selection dialogs.
+- Physical multi-monitor, mixed-DPI and Windows logoff interactions were
+  not tested as part of this review fix.
+
+Fixed image rules remain JPG-only, <= original size and <= 5,000,000 bytes,
+with maximum long edge 1200px. The application version remains 3.0.4.

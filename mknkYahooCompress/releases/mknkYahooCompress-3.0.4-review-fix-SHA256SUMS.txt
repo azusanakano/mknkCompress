@@ -1,0 +1,5 @@
+955389f52c5f900380d69dfe087a77a09e8d22854a0cc15923a1af62eedc0f4f  mknkYahooCompress-3.0.4-review-fix-All-Architectures.zip
+6ee86a4be9eba4be5a2beaabf5ca1d68a195ad630a9c1bcebe1280784dc9a56f  mknkYahooCompress-3.0.4-review-fix-native-source.zip
+73a2e2ebe20576fe74df31a015efab40b2019698b5e0ba1776c7a468eb58e9ef  mknkYahooCompress-3.0.4-review-fix-Windows-arm64.zip
+54cd3560244734d4c17ed558100a2832b0ebd372c773c5e685efee25035f1f4e  mknkYahooCompress-3.0.4-review-fix-Windows-x64.zip
+d0237e4379574ac528db707975828cf721b48717748a0e010b8b8269e431d90b  mknkYahooCompress-3.0.4-review-fix-Windows-x86.zip

@@ -1,18 +1,22 @@
-# mknkYahooCompress 3.0.4 Native
+# mknkYahooCompress 3.0.4 最新修正版
 
-## 改善内容
+最新の配布物は、ファイル名に **`3.0.4-review-fix`** を含む次のZIPです。
+アプリを終了し、ご使用のWindowsに合うZIPを展開してEXEを入れ替えてください。
 
-起動するたびに画面の位置・サイズを調整する手間を減らしました。
-移動・サイズ変更を自動保存し、次回は前回の位置・サイズで起動します。
-最大化状態も記憶し、最小化したまま終了しても次回は画面が開きます。
+| 用途 | ダウンロード |
+|---|---|
+| Windows x64 | [mknkYahooCompress-3.0.4-review-fix-Windows-x64.zip](mknkYahooCompress-3.0.4-review-fix-Windows-x64.zip) |
+| Windows x86 | [mknkYahooCompress-3.0.4-review-fix-Windows-x86.zip](mknkYahooCompress-3.0.4-review-fix-Windows-x86.zip) |
+| Windows ARM64 | [mknkYahooCompress-3.0.4-review-fix-Windows-arm64.zip](mknkYahooCompress-3.0.4-review-fix-Windows-arm64.zip) |
+| 3種類のWindows版をまとめて取得 | [mknkYahooCompress-3.0.4-review-fix-All-Architectures.zip](mknkYahooCompress-3.0.4-review-fix-All-Architectures.zip) |
+| 修正版ソース | [mknkYahooCompress-3.0.4-review-fix-native-source.zip](mknkYahooCompress-3.0.4-review-fix-native-source.zip) |
 
-- 保存位置が完全に画面外になった場合は、Windowsが見える位置へ調整
-- 保存データが破損した場合は初期配置へ復帰
-- 接尾辞・出力先・テーマを既存の設定ファイルから継承
-- x64、x86、ARM64の実行ファイルを再ビルド
+`Native` および `queue-fix` を含む従来のZIPは比較・記録用の旧配布物です。
+同じバージョン表記の3.0.4でも今回の修正を含まないため、新規利用・更新には上記の `review-fix` 版を使用してください。
 
-JPG固定、5MB以下、元画像より大きくしない処理、長辺1200px以下、接尾辞保存などの機能は引き続き利用できます。
+今回の修正版では、元画像を差し替えて再試行するときの容量判定と、処理中に追加できなかった場合の画面表示を修正しています。
+完了済み画像の結果を保持し、追加した未完了画像だけを処理します。
+処理中の追加は受け付けないため、完了またはキャンセル後にもう一度追加してください。
 
-更新するには、アプリを終了して新しいEXEへ入れ替えてください。
-初回だけ位置・サイズを調整すると、その後は自動復元されます。
-検証範囲と未実施項目は `BUILD-REPORT.txt` に記載しています。
+JPG固定、5,000,000 bytes以下、元画像の容量以下、長辺1200px以下の仕様と、接尾辞・出力先・テーマ・ウィンドウ配置の保存は引き続き利用できます。
+検証範囲と未実施項目は、各ZIP内の `BUILD-REPORT.txt` に記載しています。
